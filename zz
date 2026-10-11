@@ -1,0 +1,72 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- Settings
+local BOX_COLOR = Color3.fromRGB(255, 50, 50)   -- change color if you want
+local STUD_SIZE = Vector3.new(4, 5.5, 0)        -- width, height in studs
+
+local function createBoxESP(character)
+	local root = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
+	if not root then return end
+
+	-- Remove old one
+	local old = root:FindFirstChild("ESP_Box")
+	if old then old:Destroy() end
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "ESP_Box"
+	billboard.Adornee = root
+	billboard.AlwaysOnTop = true
+	billboard.Size = UDim2.new(STUD_SIZE.X, 0, STUD_SIZE.Y, 0)
+	billboard.StudsOffset = Vector3.new(0, 0.5, 0)
+	billboard.LightInfluence = 0
+	billboard.MaxDistance = 2000
+	billboard.Parent = root
+
+	local frame = Instance.new("Frame")
+	frame.Name = "Box"
+	frame.Size = UDim2.new(1, 0, 1, 0)
+	frame.BackgroundTransparency = 1          -- no fill
+	frame.BorderSizePixel = 0
+	frame.Parent = billboard
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = BOX_COLOR
+	stroke.Thickness = 1                      -- 1px thin
+	stroke.Transparency = 0
+	stroke.Parent = frame
+end
+
+local function setupPlayer(player)
+	if player == LocalPlayer then return end
+
+	local function onCharacterAdded(character)
+		task.wait(0.1)
+		createBoxESP(character)
+	end
+
+	if player.Character then
+		onCharacterAdded(player.Character)
+	end
+
+	player.CharacterAdded:Connect(onCharacterAdded)
+end
+
+-- Existing players
+for _, player in ipairs(Players:GetPlayers()) do
+	setupPlayer(player)
+end
+
+-- New players
+Players.PlayerAdded:Connect(setupPlayer)
+
+-- Cleanup
+Players.PlayerRemoving:Connect(function(player)
+	if player.Character then
+		local root = player.Character:FindFirstChild("HumanoidRootPart")
+		if root then
+			local esp = root:FindFirstChild("ESP_Box")
+			if esp then esp:Destroy() end
+		end
+	end
+end)
