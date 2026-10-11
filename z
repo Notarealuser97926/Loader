@@ -1,0 +1,179 @@
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+-- Settings
+local Settings = {
+	Enabled = false,
+	TeamCheck = false,
+	DeadCheck = false,
+	HealthBased = false,
+	FillColor = Color3.fromRGB(255, 170, 255)
+}
+
+local Highlights = {}
+
+local ColorOptions = {
+	["Pink"] = Color3.fromRGB(255, 170, 255),
+	["White"] = Color3.fromRGB(255, 255, 255),
+	["Spring Green"] = Color3.fromRGB(0, 255, 127)
+}
+
+local function getHealthColor(humanoid)
+	local percent = math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
+	if percent > 0.5 then
+		return Color3.fromRGB(255, 255, 0):Lerp(Color3.fromRGB(0, 255, 0), (percent - 0.5) * 2)
+	else
+		return Color3.fromRGB(255, 0, 0):Lerp(Color3.fromRGB(255, 255, 0), percent * 2)
+	end
+end
+
+local function removeCham(player)
+	if Highlights[player] then
+		Highlights[player]:Destroy()
+		Highlights[player] = nil
+	end
+end
+
+local function updateCham(player)
+	if player == LocalPlayer then return end
+
+	local character = player.Character
+	if not character then
+		removeCham(player)
+		return
+	end
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		removeCham(player)
+		return
+	end
+
+	if Settings.DeadCheck and humanoid.Health <= 0 then
+		removeCham(player)
+		return
+	end
+
+	if Settings.TeamCheck and player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
+		removeCham(player)
+		return
+	end
+
+	local highlight = Highlights[player]
+	if not highlight or not highlight.Parent then
+		highlight = Instance.new("Highlight")
+		highlight.Name = "BetterCham"
+		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		highlight.OutlineTransparency = 1
+		highlight.FillTransparency = 0.65
+		highlight.Parent = character
+		Highlights[player] = highlight
+	end
+
+	if Settings.HealthBased then
+		highlight.FillColor = getHealthColor(humanoid)
+	else
+		highlight.FillColor = Settings.FillColor
+	end
+
+	highlight.Enabled = Settings.Enabled
+end
+
+RunService.Heartbeat:Connect(function()
+	if not Settings.Enabled then
+		for player, _ in pairs(Highlights) do
+			removeCham(player)
+		end
+		return
+	end
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		updateCham(player)
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	removeCham(player)
+end)
+
+-- ========== UI ==========
+local Window = Rayfield:CreateWindow({
+	name = "Better Chams",
+	configuration = {
+		autoSave = true,
+		autoLoad = true,
+		fileName = "BetterChams",
+	},
+})
+
+-- Main Tab
+local MainTab = Window:CreateTab({ name = "Main" })
+
+MainTab:CreateToggle({
+	name = "Chams",
+	flag = "Chams",
+	value = false,
+	callback = function(value)
+		Settings.Enabled = value
+	end,
+})
+
+-- Config Tab
+local ConfigTab = Window:CreateTab({ name = "Config" })
+
+ConfigTab:CreateToggle({
+	name = "TeamCheck",
+	flag = "TeamCheck",
+	value = false,
+	callback = function(value)
+		Settings.TeamCheck = value
+	end,
+})
+
+ConfigTab:CreateToggle({
+	name = "DeadCheck",
+	flag = "DeadCheck",
+	value = false,
+	callback = function(value)
+		Settings.DeadCheck = value
+	end,
+})
+
+ConfigTab:CreateToggle({
+	name = "Health Based Color",
+	flag = "HealthBasedColor",
+	value = false,
+	callback = function(value)
+		Settings.HealthBased = value
+	end,
+})
+
+ConfigTab:CreateDropdown({
+	name = "Fill Color",
+	flag = "FillColor",
+	options = {"Pink", "White", "Spring Green"},
+	value = "Pink",
+	callback = function(selected)
+		local colorName = typeof(selected) == "table" and selected[1] or selected
+		if ColorOptions[colorName] then
+			Settings.FillColor = ColorOptions[colorName]
+		end
+	end,
+})
+
+-- Discord Tab
+local DiscordTab = Window:CreateTab({ name = "Discord" })
+
+DiscordTab:CreateButton({
+	name = "Copy Discord Link",
+	callback = function()
+		setclipboard("https://discord.gg/dFsyuZSrSt")
+		Rayfield:Notify({
+			title = "Discord",
+			content = "Discord link copied!",
+		})
+	end,
+})
