@@ -263,15 +263,15 @@ local function doClick()
     VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
 end
 
--- ====================== INPUT ======================
+-- ====================== INPUT (PC - Right Click) ======================
 UserInputService.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.Gamepad1 and input.KeyCode == Enum.KeyCode.ButtonL2 then
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
         HoldingTrigger = true
     end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.Gamepad1 and input.KeyCode == Enum.KeyCode.ButtonL2 then
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
         HoldingTrigger = false
         Target = nil
         lastOneTapTarget = nil
@@ -351,7 +351,7 @@ end)
 
 -- ====================== MAIN TAB ======================
 MainTab:CreateToggle({
-    Name = "Aimlock (L2)",
+    Name = "Aimlock (Right Click)",
     CurrentValue = false,
     Flag = "Aimlock",
     Callback = function(v) aimlock = v end
