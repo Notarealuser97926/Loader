@@ -1,0 +1,559 @@
+local Players = game:GetService("Players")
+local Teams = game:GetService("Teams")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
+
+-- ====================== AIMBOT SETTINGS ======================
+local aimlock = false
+local teamcheck = false
+local wallcheck = false
+local liveWallCheck = false
+local friendcheck = false
+local fov360 = false
+local visiblePartLock = false
+
+local aimpart = "Head"
+local smoothness = 0
+local verticalOffset = 0
+local maxDistance = 100
+local minHealth = 0
+
+local preferredPlayers = {}
+local whitelistPlayers = {}
+local preferredTeams = {}
+local whitelistTeams = {}
+
+local Target = nil
+local HoldingTrigger = false
+
+-- ====================== TRIGGERBOT SETTINGS ======================
+local triggerbotEnabled = false
+local triggerOneTap = false
+local triggerMaxDistance = 100
+local triggerMinHealth = 0
+local triggerShotDelay = 0.15
+local triggerWhitelist = {}
+
+local lastShotTime = 0
+local lastOneTapTarget = nil
+
+-- Priority list for visible part lock
+local partPriority = {
+    "Head", "UpperTorso", "LowerTorso", "HumanoidRootPart",
+    "LeftUpperArm", "RightUpperArm", "LeftLowerArm", "RightLowerArm",
+    "LeftHand", "RightHand", "LeftUpperLeg", "RightUpperLeg",
+    "LeftLowerLeg", "RightLowerLeg", "LeftFoot", "RightFoot"
+}
+
+-- ====================== UI (Rayfield Gen2) ======================
+local Window = Rayfield:CreateWindow({
+    name = "Valley Prison - Aimbot",
+    subtitle = "By Kermet • PC Right Click",
+    sidebarLayout = true
+})
+
+local MainTab = Window:CreateTab({ name = "Main" })
+local PlayersTab = Window:CreateTab({ name = "Players" })
+local TeamsTab = Window:CreateTab({ name = "Teams" })
+local TriggerTab = Window:CreateTab({ name = "Triggerbot" })
+local SettingsTab = Window:CreateTab({ name = "Settings" })
+
+local offsetLabel = MainTab:CreateText({
+    name = "Vertical Offset",
+    text = "0 px"
+})
+
+-- ====================== HELPERS ======================
+local function getPlayerNames()
+    local list = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            table.insert(list, plr.Name)
+        end
+    end
+    table.sort(list)
+    return list
+end
+
+local function getTeamNames()
+    local list = {}
+    for _, team in ipairs(Teams:GetTeams()) do
+        table.insert(list, team.Name)
+    end
+    table.sort(list)
+    return list
+end
+
+local function isInList(name, list)
+    for _, v in ipairs(list) do
+        if v == name then return true end
+    end
+    return false
+end
+
+local function IsVisible(part)
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not root or not part then return false end
+
+    local direction = part.Position - root.Position
+    local ray = Ray.new(root.Position, direction.Unit * direction.Magnitude)
+    local hit = workspace:FindPartOnRayWithIgnoreList(ray, {LocalPlayer.Character})
+    return hit == nil or hit:IsDescendantOf(part.Parent)
+end
+
+local function GetBestVisiblePart(character)
+    if not character then return nil end
+
+    local preferred = character:FindFirstChild(aimpart)
+    if preferred and preferred:IsA("BasePart") and IsVisible(preferred) then
+        return preferred
+    end
+
+    if not visiblePartLock then
+        return preferred and preferred:IsA("BasePart") and IsVisible(preferred) and preferred or nil
+    end
+
+    for _, partName in ipairs(partPriority) do
+        if partName == aimpart then continue end
+        local part = character:FindFirstChild(partName)
+        if part and part:IsA("BasePart") and IsVisible(part) then
+            return part
+        end
+    end
+
+    return nil
+end
+
+local function passesBasicFilters(plr, hum)
+    if hum.Health <= minHealth then return false end
+    if teamcheck and plr.Team == LocalPlayer.Team then return false end
+    if friendcheck and LocalPlayer:IsFriendsWith(plr.UserId) then return false end
+
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return false end
+
+    local checkPart = plr.Character:FindFirstChild("HumanoidRootPart") or plr.Character:FindFirstChild("Head")
+    if not checkPart then return false end
+    if (checkPart.Position - myRoot.Position).Magnitude > maxDistance then return false end
+
+    if isInList(plr.Name, whitelistPlayers) then return false end
+    if plr.Team and isInList(plr.Team.Name, whitelistTeams) then return false end
+
+    return true
+end
+
+local function findBestTarget(preferPlayers, preferTeams)
+    local closest = nil
+    local closestValue = math.huge
+    local screenCenter = Camera.ViewportSize / 2
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        local char = plr.Character
+        if not char then continue end
+
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum or not passesBasicFilters(plr, hum) then continue end
+
+        local part = GetBestVisiblePart(char)
+        if not part then continue end
+
+        if wallcheck and not visiblePartLock and not IsVisible(part) then continue end
+
+        local isPreferredPlayer = isInList(plr.Name, preferredPlayers)
+        local isPreferredTeam = plr.Team and isInList(plr.Team.Name, preferredTeams)
+
+        if preferPlayers and not isPreferredPlayer then continue end
+        if preferTeams and not isPreferredTeam then continue end
+        if not preferPlayers and not preferTeams then
+            if isPreferredPlayer or isPreferredTeam then continue end
+        end
+
+        local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+        if onScreen then
+            local screenDist = (Vector2.new(pos.X, pos.Y) - screenCenter).Magnitude
+            if screenDist < closestValue then
+                closestValue = screenDist
+                closest = part
+            end
+        end
+    end
+
+    if not closest and fov360 then
+        closestValue = math.huge
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr == LocalPlayer then continue end
+            local char = plr.Character
+            if not char then continue end
+
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not hum or not passesBasicFilters(plr, hum) then continue end
+
+            local part = GetBestVisiblePart(char)
+            if not part then continue end
+
+            if wallcheck and not visiblePartLock and not IsVisible(part) then continue end
+
+            local isPreferredPlayer = isInList(plr.Name, preferredPlayers)
+            local isPreferredTeam = plr.Team and isInList(plr.Team.Name, preferredTeams)
+
+            if preferPlayers and not isPreferredPlayer then continue end
+            if preferTeams and not isPreferredTeam then continue end
+            if not preferPlayers and not preferTeams then
+                if isPreferredPlayer or isPreferredTeam then continue end
+            end
+
+            local distance = (part.Position - myRoot.Position).Magnitude
+            if distance < closestValue then
+                closestValue = distance
+                closest = part
+            end
+        end
+    end
+
+    return closest
+end
+
+local function GetClosestTarget()
+    local t = findBestTarget(true, false)
+    if t then return t end
+    t = findBestTarget(false, true)
+    if t then return t end
+    return findBestTarget(false, false)
+end
+
+-- ====================== TRIGGERBOT LOGIC ======================
+local function canTriggerbotShoot(targetPart)
+    if not targetPart or not targetPart.Parent then return false end
+
+    local char = targetPart.Parent
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local plr = Players:GetPlayerFromCharacter(char)
+    if not hum or not plr then return false end
+
+    if hum.Health <= triggerMinHealth then return false end
+    if isInList(plr.Name, triggerWhitelist) then return false end
+
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return false end
+    if (targetPart.Position - myRoot.Position).Magnitude > triggerMaxDistance then return false end
+
+    if teamcheck and plr.Team == LocalPlayer.Team then return false end
+
+    return true
+end
+
+local function doClick()
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+    task.wait(0.03)
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+end
+
+-- ====================== INPUT (PC - Right Click) ======================
+UserInputService.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        HoldingTrigger = true
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        HoldingTrigger = false
+        Target = nil
+        lastOneTapTarget = nil
+    end
+end)
+
+-- ====================== MAIN LOOP ======================
+RunService.RenderStepped:Connect(function()
+    if not aimlock or not HoldingTrigger then
+        Target = nil
+        return
+    end
+
+    if Target and liveWallCheck and not IsVisible(Target) then
+        Target = nil
+    end
+
+    if Target and Target.Parent then
+        local best = GetBestVisiblePart(Target.Parent)
+        if best then
+            Target = best
+        else
+            Target = nil
+        end
+    end
+
+    if not Target or not Target.Parent or not Target.Parent:FindFirstChildOfClass("Humanoid") or Target.Parent.Humanoid.Health <= minHealth then
+        Target = GetClosestTarget()
+    end
+
+    if Target then
+        local targetPos = Target.Position
+
+        if verticalOffset ~= 0 then
+            local screenPos = Camera:WorldToViewportPoint(targetPos)
+            local offsetPos = Vector3.new(screenPos.X, screenPos.Y - verticalOffset, screenPos.Z)
+            local ray = Camera:ViewportPointToRay(offsetPos.X, offsetPos.Y)
+            targetPos = Camera.CFrame.Position + ray.Direction * (targetPos - Camera.CFrame.Position).Magnitude
+        end
+
+        local goal = CFrame.new(Camera.CFrame.Position, targetPos)
+
+        if smoothness <= 0 then
+            Camera.CFrame = goal
+        else
+            Camera.CFrame = Camera.CFrame:Lerp(goal, smoothness)
+        end
+    end
+
+    if triggerbotEnabled and Target and canTriggerbotShoot(Target) then
+        local now = tick()
+
+        if triggerOneTap then
+            if lastOneTapTarget ~= Target then
+                doClick()
+                lastOneTapTarget = Target
+                lastShotTime = now
+            end
+        else
+            if now - lastShotTime >= triggerShotDelay then
+                doClick()
+                lastShotTime = now
+            end
+        end
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    offsetLabel:Set(verticalOffset .. " px")
+end)
+
+-- ====================== MAIN TAB ======================
+MainTab:CreateToggle({
+    name = "Aimlock (Right Click)",
+    value = false,
+    flag = "Aimlock",
+    callback = function(v) aimlock = v end
+})
+
+MainTab:CreateToggle({
+    name = "360° Fallback",
+    value = false,
+    flag = "Fov360",
+    callback = function(v) fov360 = v end
+})
+
+MainTab:CreateToggle({
+    name = "Wall Check (Selection)",
+    value = false,
+    flag = "WallCheck",
+    callback = function(v) wallcheck = v end
+})
+
+MainTab:CreateToggle({
+    name = "Live Wall Check",
+    value = false,
+    flag = "LiveWallCheck",
+    callback = function(v) liveWallCheck = v end
+})
+
+MainTab:CreateToggle({
+    name = "Visible Part Lock",
+    value = false,
+    flag = "VisiblePartLock",
+    callback = function(v) visiblePartLock = v end
+})
+
+MainTab:CreateToggle({
+    name = "Team Check (Ignore Own Team)",
+    value = false,
+    flag = "TeamCheck",
+    callback = function(v) teamcheck = v end
+})
+
+MainTab:CreateToggle({
+    name = "Friend Check",
+    value = false,
+    flag = "FriendCheck",
+    callback = function(v) friendcheck = v end
+})
+
+MainTab:CreateDropdown({
+    name = "Preferred Aim Part",
+    options = {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart"},
+    value = aimpart,
+    flag = "AimPart",
+    callback = function(opt)
+        aimpart = type(opt) == "table" and opt[1] or opt
+    end
+})
+
+-- ====================== PLAYERS TAB ======================
+PlayersTab:CreateDropdown({
+    name = "Preferred Targets (Highest Priority)",
+    options = getPlayerNames(),
+    multiSelect = true,
+    value = {},
+    flag = "PreferredPlayers",
+    callback = function(opts) preferredPlayers = opts or {} end
+})
+
+PlayersTab:CreateDropdown({
+    name = "Whitelist Players (Never Target)",
+    options = getPlayerNames(),
+    multiSelect = true,
+    value = {},
+    flag = "WhitelistPlayers",
+    callback = function(opts) whitelistPlayers = opts or {} end
+})
+
+PlayersTab:CreateButton({
+    name = "Refresh Player Lists",
+    callback = function()
+        Window:Notify({
+            title = "Info",
+            content = "Re-execute the script to refresh player lists.",
+            duration = 4
+        })
+    end
+})
+
+-- ====================== TEAMS TAB ======================
+TeamsTab:CreateDropdown({
+    name = "Preferred Teams",
+    options = getTeamNames(),
+    multiSelect = true,
+    value = {},
+    flag = "PreferredTeams",
+    callback = function(opts) preferredTeams = opts or {} end
+})
+
+TeamsTab:CreateDropdown({
+    name = "Whitelist Teams (Never Target)",
+    options = getTeamNames(),
+    multiSelect = true,
+    value = {},
+    flag = "WhitelistTeams",
+    callback = function(opts) whitelistTeams = opts or {} end
+})
+
+TeamsTab:CreateButton({
+    name = "Refresh Team Lists",
+    callback = function()
+        Window:Notify({
+            title = "Info",
+            content = "Re-execute the script to refresh team lists.",
+            duration = 4
+        })
+    end
+})
+
+-- ====================== TRIGGERBOT TAB ======================
+TriggerTab:CreateToggle({
+    name = "Enable Triggerbot",
+    value = false,
+    flag = "Triggerbot",
+    callback = function(v) triggerbotEnabled = v end
+})
+
+TriggerTab:CreateToggle({
+    name = "One-Tap Mode",
+    value = false,
+    flag = "TriggerOneTap",
+    callback = function(v)
+        triggerOneTap = v
+        lastOneTapTarget = nil
+    end
+})
+
+TriggerTab:CreateSlider({
+    name = "Shot Delay (seconds)",
+    range = {0.05, 1},
+    increment = 0.01,
+    value = triggerShotDelay,
+    flag = "TriggerDelay",
+    callback = function(v) triggerShotDelay = v end
+})
+
+TriggerTab:CreateSlider({
+    name = "Max Distance (Studs)",
+    range = {10, 500},
+    increment = 5,
+    value = triggerMaxDistance,
+    flag = "TriggerDistance",
+    callback = function(v) triggerMaxDistance = v end
+})
+
+TriggerTab:CreateSlider({
+    name = "Minimum Health",
+    range = {0, 100},
+    increment = 1,
+    value = triggerMinHealth,
+    flag = "TriggerMinHealth",
+    callback = function(v) triggerMinHealth = v end
+})
+
+TriggerTab:CreateDropdown({
+    name = "Triggerbot Whitelist (Never Shoot)",
+    options = getPlayerNames(),
+    multiSelect = true,
+    value = {},
+    flag = "TriggerWhitelist",
+    callback = function(opts) triggerWhitelist = opts or {} end
+})
+
+TriggerTab:CreateButton({
+    name = "Refresh Whitelist",
+    callback = function()
+        Window:Notify({
+            title = "Info",
+            content = "Re-execute the script to refresh the whitelist.",
+            duration = 4
+        })
+    end
+})
+
+-- ====================== SETTINGS TAB ======================
+SettingsTab:CreateSlider({
+    name = "Max Distance (Studs)",
+    range = {10, 500},
+    increment = 5,
+    value = maxDistance,
+    flag = "MaxDistance",
+    callback = function(v) maxDistance = v end
+})
+
+SettingsTab:CreateSlider({
+    name = "Minimum Health",
+    range = {0, 100},
+    increment = 1,
+    value = minHealth,
+    flag = "MinHealth",
+    callback = function(v) minHealth = v end
+})
+
+SettingsTab:CreateSlider({
+    name = "Smoothness",
+    range = {0, 1},
+    increment = 0.05,
+    value = smoothness,
+    flag = "Smoothness",
+    callback = function(v) smoothness = v end
+})
+
+SettingsTab:CreateSlider({
+    name = "Vertical Offset (Pixels)",
+    range = {-100, 100},
+    increment = 1,
+    value = verticalOffset,
+    flag = "VerticalOffset",
+    callback = function(v) verticalOffset = v end
+})
